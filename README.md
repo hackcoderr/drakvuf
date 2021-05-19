@@ -45,4 +45,63 @@ systemctl enable xen-init-dom0.service
 systemctl enable xenconsoled.service
 update-grub
 ```
+**Note:**  Also make sure you are running a relatively recent kernel. In Ubuntu 20.04 the 5.10.0-1019-oem kernel has been verified to work, anything newer would also work. Older kernels in your dom0 will not work properly!
+```
+uname -r
+```
+
+Make xen boot before the kernel.
+```
+cd /etc/grub.d/;mv 20_linux_xen 09_linux_xen
+```
+Once you are done with these steps, you can finalize your setup.
+```
+update-grub
+reboot
+```
+Once you are booted into Xen, verify that everything works as such.
+```
+sudo xen-detect
+```
+Output should be:
+Running in PV context on Xen v4.7
+
+Check Dom 0 is running or not.
+```
+xl list
+```
+The output should be something similar:
+```
+Name                                        ID   Mem VCPUs	State	Time(s)
+Domain-0                                     0  4096     2     r-----     614.0
+```
+## Setup an LVM volume Group
+
+Install lvm2.
+```
+sudo apt-get install lvm2 -y
+```
+**Note:** Before creating physical volume (PV), Go inside Disk partition and create a volume. Never give the whole path of disk like /dev/sda otherwise your os will crash. So when you will create a volume its has named like /dev/sd2 or /dev/sd3 and so on. So pick only a free volume then move ahead.
+
+Create physical volume on your free space in my case its /dev/sda2.
+```
+pvcreate /dev/sda2
+```
+Create Volume Group
+```
+vgcreate vg /dev/sda2
+```
+Create Logical Volume.
+
+**syntex:** Syntax: lvcreate –L<amount of space in GB>G –n<any name for your system> <volume group name previously mentioned>
+```
+lvcreate –L110G –n windows7-sp1 vg
+```
+
+## Install VMM for virtual bridge create
+
+Go to ubuntu software center and install virtual machine manager.
+
+
+
 
