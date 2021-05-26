@@ -302,7 +302,64 @@ Windows Kernel found @ 0x2604000
 Kernel filename: ntkrpamp.pdb
   ```
   
-
+Generate Rekall profile.
+	
+```
+cd /tmp
+rekall fetch_pdb ntkrpamp 684da42a30cc450f81c535b4d18944b12
+rekall parse_pdb ntkrpamp > windows7-sp1.rekall.json
+sudo mv windows7-sp1.rekall.json /root
+```
+	
+	
+Create LibVMI config with Rekall profile:
+```
+sudo su
+printf "windows7-sp1 { \n\
+    ostype = \"Windows\"; \n\
+    rekall_profile = \"/root/windows7-sp1.rekall.json\"; \n\
+}" >> /etc/libvmi.conf
+exit
+```
+	
+Test if LibVMI is working or not:
+	
+```
+sudo vmi-process-list windows7-sp1
+```
+	
+Output should be similar to:
+	
+```
+Process listing for VM windows7-sp1-x86 (id=7)
+[    4] System (struct addr:84aba980)
+[  220] smss.exe (struct addr:85a44020)
+[  300] csrss.exe (struct addr:85f67a68)
+[  336] wininit.exe (struct addr:8601e030)
+[  348] csrss.exe (struct addr:84ba4030)
+[  384] winlogon.exe (struct addr:85966d40)
+[  444] services.exe (struct addr:8614c030)
+[  460] lsass.exe (struct addr:86171030)
+[  468] lsm.exe (struct addr:8617b4f8)
+[  564] svchost.exe (struct addr:861d9bc8)
+[  628] svchost.exe (struct addr:863fb8a8)
+[  816] sppsvc.exe (struct addr:86426838)
+[  856] svchost.exe (struct addr:854abd40)
+[  880] svchost.exe (struct addr:854c5030)
+[  916] svchost.exe (struct addr:854d7a70)
+[ 1240] svchost.exe (struct addr:8614cb80)
+[ 1280] svchost.exe (struct addr:854f7d40)
+[ 1608] spoolsv.exe (struct addr:85578660)
+[ 1636] svchost.exe (struct addr:85554af0)
+[  792] SearchIndexer. (struct addr:8562ac08)
+[ 1128] taskhost.exe (struct addr:858d9d40)
+[ 1524] dwm.exe (struct addr:857f3a60)
+[ 1728] explorer.exe (struct addr:858d9180)
+[ 1720] regsvr32.exe (struct addr:8605f398)
+[  248] svchost.exe (struct addr:863ed030)
+[ 1024] svchost.exe (struct addr:86420390)
+[  256] WmiPrvSE.exe (struct addr:854014a0)
+```
 
 
 
