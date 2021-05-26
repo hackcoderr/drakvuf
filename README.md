@@ -81,7 +81,7 @@ Install lvm2.
 ```
 sudo apt-get install lvm2 -y
 ```
-**Note:** Before creating physical volume (PV), Go inside Disk partition and create a volume. Never give the whole path of disk like /dev/sda otherwise your os will crash. So when you will create a volume its has named like /dev/sd2 or /dev/sd3 and so on. So pick only a free volume then move ahead.
+**Note:** Before creating physical volume (PV), Go inside Disk partition and create a volume. Never give the whole path of disk like /dev/sda otherwise your os will be crashed down. So when you will create a volume then it has named like /dev/sd2 or /dev/sd3 and so on. So pick only a free volume then move ahead.
 
 Create physical volume on your free space in my case its /dev/sda2.
 ```
@@ -101,6 +101,207 @@ lvcreate –L110G –n windows7-sp1 vg
 ## Install VMM for virtual bridge create
 
 Go to ubuntu software center and install virtual machine manager.
+  
+## Setup Linux Bridge for guest networking
+  
+Next we need to set up our system so that we can attach virtual machines to the external network. This is done by creating a virtual switch within dom0. The switch will take packets from the virtual machines and forward them on to the physical network so they can see the internet and other machines on your network.
+
+The piece of software we use to do this is called the Linux bridge and its core components reside inside the Linux kernel. In this case, the bridge acts as our virtual switch. The Debian kernel is compiled with the Linux bridging module so all we need to do is install the control utilities:
+  
+```
+apt-get install bridge-utils
+```
+  
+  Management of the bridge is usually done using the brctl command. The initial setup for our Xen bridge, though, is a "set it once and forget it" kind of thing, so we are instead going to configure our bridge through Debian’s networking infrastructure. It can be configured via /etc/network/interfaces.
+
+Open this file with the editor of your choice. If you selected a minimal installation, the nano text editor should already be installed. Open the file:
+  ```
+ nano /etc/network/interfaces
+  ```
+  
+  (If you get nano: command not found, install it with apt-get install nano.)
+
+Depending on your hardware you probably see a file pretty similar to this:
+  
+  ```
+    auto lo
+    iface lo inet loopback
+
+    auto eth0
+    iface eth0 inet dhcp
+  ```
+  This file is very simple. Each stanza represents a single interface.
+
+Breaking it down, “auto eth0” means that eth0 will be configured when ifup -a is run (which happens at boot time). This means that the interface will automatically be started/stopped for you. ("eth0 is its traditional name - you'll probably see something more current like "ens1", "en0sp2" or even "enx78e7d1ea46da")
+
+“iface eth0” then describes the interface itself. In this case, it specifies that it should be configured by DHCP - we are going to assume that you have DHCP running on your network for this guide. If you are using static addressing you probably know how to set that up.
+
+We are going to edit this file so it resembles such:
+  ```
+  auto lo
+    iface lo inet loopback
+
+    auto eth0
+    iface eth0 inet manual
+    
+    auto xenbr0
+    iface xenbr0 inet dhcp
+         bridge_ports eth0
+  ```
+  As well as adding the bridge stanza, be sure to change dhcp to manual in the iface eth0 inet manual line, so that IP (Layer 3) is assigned to the bridge, not the interface. The interface will provide the physical and data-link layers (Layers 1 & 2) only.
+
+Now restart networking (for a remote machine, make sure you have a backup way to access the host if this fails):
+  ```
+  service networking restart
+  ```
+  and check to make sure that it worked:
+  ```
+      brctl show
+  ```
+  If all is well, the bridge will be listed and your interface will appear in the interfaces column:
+  ```
+  bridge name     bridge id               STP enabled     interfaces
+    xenbr0          8000.4ccc6ad1847d       no              enp2s0
+  ```
+  Bridged networking will now start automatically every boot.
+
+If the bridge isn't operating correctly, go back and check the edits to the interfaces file very carefully.
+
+  
+  ## Create configuration file from which we will create window 7 machine
+   Make a config file inside ``/etc/xen/``
+ ```
+  gedit /etc/xen/win7.cfg
+  ```
+ Install Windows 7 from your ISO using the following template (tune it as needed):
+  ```
+  arch = 'x86_64'
+name = "windows7-sp1"
+maxmem = 1500
+memory = 1500
+vcpus = 1
+maxcpus = 1
+builder = "hvm"
+boot = "cd"
+hap = 1
+acpi = 1
+on_poweroff = "destroy"
+on_reboot = "restart"
+on_crash = "destroy"
+vnc=1
+vnclisten="0.0.0.0"
+usb = 1
+usbdevice = "tablet"
+altp2mhvm = 1
+vif = ['type=ioemu,model=e1000,bridge=<your virtual bridge name like in my case it is virbr0>,mac=00:06:5B:BA:7C:01']
+disk = [
+    'phy:/dev/vg/windows7-sp1,xvda,w', 
+    'file:<path to your windows 7 image in my case it is "/home/xen/Desktop/windows7.iso">,hdc:cdrom,r'
+]
+
+boot="dc"
+sdl=0
+vncconsole=1
+vncpasswd=''
+serial='pty'
+  ```
+  Now run the below command to create windows7 VM
+  
+  ```
+  xl create /etc/xen/win7.cfg
+  ```
+  
+  Enter LibVmi folder in the drakvuf folder and build it.
+  ```
+  cd ~/drakvuf/libvmi
+./autogen.sh
+./configure --disable-kvm
+  ```
+  Output should look like this:
+  ```
+  Feature         | Option
+----------------|---------------------------
+Xen Support     | --enable-xen=yes
+KVM Support     | --enable-kvm=no
+File Support    | --enable-file=yes
+Shm-snapshot    | --enable-shm-snapshot=no
+Rekall profiles | --enable-rekall-profiles=yes
+----------------|---------------------------
+
+OS              | Option
+----------------|---------------------------
+Windows         | --enable-windows=yes
+Linux           | --enable-linux=yes
+
+
+Tools           | Option                    | Reason
+----------------|---------------------------|----------------------------
+Examples        | --enable-examples=yes
+VMIFS           | --enable-vmifs=yes        | yes
+```
+  Build and install LibVMI
+  ```
+  make
+sudo make install
+sudo echo "export LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:/usr/local/lib" >> ~/.bashrc
+```
+  Build and install Rekall
+  ```
+  cd ~/drakvuf/rekall/rekall-core
+sudo pip install setuptools
+python setup.py build
+sudo python setup.py install
+  ```
+  Now we will create the JSON configuration file for the Windows domain. First, we need to get the debug information for the Windows kernel via the LibVMI vmi-win-guid tool. For example, in the following my domain is named ``windows7-sp1``.
+  ```
+  $ sudo xl list
+Name                                        ID   Mem VCPUs	State	Time(s)
+Domain-0                                     0  4024     4     r-----     848.8
+windows7-sp1-x86                             7  3000     1     -b----      94.7
+$ sudo vmi-win-guid name windows7-sp1-x86
+Windows Kernel found @ 0x2604000
+	Version: 32-bit Windows 7
+	PE GUID: 4ce78a09412000
+	PDB GUID: 684da42a30cc450f81c535b4d18944b12
+	Kernel filename: ntkrpamp.pdb
+	Multi-processor with PAE (version 5.0 and higher)
+	Signature: 17744.
+	Machine: 332.
+	# of sections: 22.
+	# of symbols: 0.
+	Timestamp: 1290242569.
+	Characteristics: 290.
+	Optional header size: 224.
+	Optional header type: 0x10b
+	Section 1: .text
+	Section 2: _PAGELK
+	Section 3: POOLMI
+	Section 4: POOLCODE
+	Section 5: .data
+	Section 6: ALMOSTRO
+	Section 7: SPINLOCK
+	Section 8: PAGE
+	Section 9: PAGELK
+	Section 10: PAGEKD
+	Section 11: PAGEVRFY
+	Section 12: PAGEHDLS
+	Section 13: PAGEBGFX
+	Section 14: PAGEVRFB
+	Section 15: .edata
+	Section 16: PAGEDATA
+	Section 17: PAGEKDD
+	Section 18: PAGEVRFC
+	Section 19: PAGEVRFD
+	Section 20: INIT
+	Section 21: .rsrc
+	Section 22: .reloc
+  ```
+  The important fields are:
+  ```
+  PDB GUID: 684da42a30cc450f81c535b4d18944b12
+Kernel filename: ntkrpamp.pdb
+  ```
+  
 
 
 
