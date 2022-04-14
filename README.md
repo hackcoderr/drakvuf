@@ -95,7 +95,7 @@ Create Logical Volume.
 
 **syntex:** Syntax: lvcreate –L<amount of space in GB>G –n<any name for your system> <volume group name previously mentioned>
 ```
-lvcreate –L110G –n windows7-sp1 vg
+lvcreate -L110G -n windows7-sp1 vg
 ```
 
 ## Install VMM for virtual bridge create
@@ -152,7 +152,7 @@ We are going to edit this file so it resembles such:
 
 Now restart networking (for a remote machine, make sure you have a backup way to access the host if this fails):
   ```
-  service networking restart
+  service network-manager restart
   ```
   and check to make sure that it worked:
   ```
